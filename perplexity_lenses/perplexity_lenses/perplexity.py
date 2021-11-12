@@ -3,8 +3,23 @@ import re
 import unicodedata
 import urllib.request
 from typing import Dict
+import sentencepiece
 
 import kenlm
+
+
+class SentencePiece:
+    def __init__(
+        self,
+        model: str,
+    ):
+        super().__init__()
+        self.sp = sentencepiece.SentencePieceProcessor()
+        self.sp.load(str(model))
+
+    def do(self, text: dict) -> dict:
+        tokenized = self.sp.encode_as_pieces(text)
+        return " ".join(tokenized)
 
 
 class KenlmModel:
@@ -54,6 +69,7 @@ class KenlmModel:
         download_kenlm_model(language)
         try:
             self.model = kenlm.Model(f"{language}.arpa.bin")
+            self.tokenizer = SentencePiece(f"{language}.sp.model")
         except OSError:
             os.remove(f"{language}.arpa.bin")
             if os.path.exists(f"{language}.sp.model"):
@@ -69,6 +85,8 @@ class KenlmModel:
     def get_perplexity(self, doc: str, normalize_cc_net: bool = True):
         if normalize_cc_net:
             doc = self.normalize(doc)
+        # Tokenize
+        doc = self.tokenizer.do(doc)
         doc_log_score, doc_length = 0, 0
         for line in doc.split("\n"):
             log_score = self.model.score(line)

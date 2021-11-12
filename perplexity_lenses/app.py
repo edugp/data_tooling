@@ -1,5 +1,5 @@
 import logging
-from functools import partial
+from functools import partial, lru_cache
 
 import streamlit as st
 from embedding_lenses.data import uploaded_file_to_dataframe
@@ -7,7 +7,7 @@ from embedding_lenses.dimensionality_reduction import get_tsne_embeddings, get_u
 from embedding_lenses.embedding import load_model
 
 from perplexity_lenses.data import documents_df_to_sentences_df, hub_dataset_to_dataframe
-from perplexity_lenses.engine import DIMENSIONALITY_REDUCTION_ALGORITHMS, DOCUMENT_TYPES, EMBEDDING_MODELS, LANGUAGES, SEED, generate_plot
+from perplexity_lenses.engine import DIMENSIONALITY_REDUCTION_ALGORITHMS, DOCUMENT_TYPES, EMBEDDING_MODELS, LANGUAGES, SEED, generate_data_for_plotting, generate_plot
 from perplexity_lenses.perplexity import KenlmModel
 
 logging.basicConfig(level=logging.INFO)
@@ -41,29 +41,38 @@ with col7:
 dimensionality_reduction = st.selectbox("Dimensionality Reduction algorithm", DIMENSIONALITY_REDUCTION_ALGORITHMS, 0)
 model_name = st.selectbox("Sentence embedding model", EMBEDDING_MODELS, 0)
 
-with st.spinner(text="Loading embedding model..."):
-    model = load_model(model_name)
-dimensionality_reduction_function = (
-    partial(get_umap_embeddings, random_state=SEED) if dimensionality_reduction == "UMAP" else partial(get_tsne_embeddings, random_state=SEED)
-)
+@st.cache(persist=True, max_entries=10, show_spinner=False)
+def generate_plot_data_from_hub_dataset(hub_dataset, hub_dataset_config, hub_dataset_split, text_column, language, doc_type, sample, dimensionality_reduction, model_name):
+    with st.spinner(text="Loading embedding model..."):
+        model = load_model(model_name)
+    dimensionality_reduction_function = (
+        partial(get_umap_embeddings, random_state=SEED) if dimensionality_reduction == "UMAP" else partial(get_tsne_embeddings, random_state=SEED)
+    )
 
-with st.spinner(text="Loading KenLM model..."):
-    kenlm_model = KenlmModel.from_pretrained(language)
+    with st.spinner(text="Loading KenLM model..."):
+        kenlm_model = KenlmModel.from_pretrained(language)
 
-if uploaded_file or hub_dataset:
-    with st.spinner("Loading dataset..."):
-        if uploaded_file:
-            df = uploaded_file_to_dataframe(uploaded_file)
-            if doc_type == "Sentence":
-                df = documents_df_to_sentences_df(df, text_column, sample, seed=SEED)
-            df["perplexity"] = df[text_column].map(kenlm_model.get_perplexity)
-        else:
-            df = hub_dataset_to_dataframe(hub_dataset, hub_dataset_config, hub_dataset_split, sample, text_column, kenlm_model, seed=SEED, doc_type=doc_type)
+    # if uploaded_file or hub_dataset:
+    #     with st.spinner("Loading dataset..."):
+    #         if uploaded_file:
+    #             df = uploaded_file_to_dataframe(uploaded_file)
+    #             if doc_type == "Sentence":
+    #                 df = documents_df_to_sentences_df(df, text_column, sample, seed=SEED)
+    #             df["perplexity"] = df[text_column].map(kenlm_model.get_perplexity)
+    #         else:
+    #             df = hub_dataset_to_dataframe(hub_dataset, hub_dataset_config, hub_dataset_split, sample, text_column, kenlm_model, seed=SEED, doc_type=doc_type)
+    df = hub_dataset_to_dataframe(hub_dataset, hub_dataset_config, hub_dataset_split, sample, text_column, kenlm_model, seed=SEED, doc_type=doc_type)
 
     # Round perplexity
     df["perplexity"] = df["perplexity"].round().astype(int)
     logger.info(f"Perplexity range: {df['perplexity'].min()} - {df['perplexity'].max()}")
-    plot = generate_plot(df, text_column, "perplexity", None, dimensionality_reduction_function, model, seed=SEED, context_logger=st.spinner)
-    logger.info("Displaying plot")
-    st.bokeh_chart(plot)
-    logger.info("Done")
+    text, x, y, encoded_labels, labels = generate_data_for_plotting(df, text_column, "perplexity", None, dimensionality_reduction_function, model, seed=SEED, context_logger=st.spinner)
+    return text, x, y, encoded_labels, labels
+
+# print(generate_plot_from_hub_dataset.cache_info())
+text, x, y, encoded_labels, labels = generate_plot_data_from_hub_dataset(hub_dataset, hub_dataset_config, hub_dataset_split, text_column, language, doc_type, sample, dimensionality_reduction, model_name)
+plot = generate_plot(text, x, y, encoded_labels, labels, text_column, "perplexity")
+# print(generate_plot_from_hub_dataset.cache_info())
+logger.info("Displaying plot")
+st.bokeh_chart(plot)
+logger.info("Done")

@@ -85,7 +85,7 @@ class ContextLogger:
         logger.info(f"Took: {time.time() - self.start_time:.4f} seconds")
 
 
-def generate_plot(
+def generate_data_for_plotting(
     df: pd.DataFrame,
     text_column: str,
     label_column: str,
@@ -111,12 +111,17 @@ def generate_plot(
     with context_logger("Reducing dimensionality..."):
         embeddings_2d = dimensionality_reduction_function(embeddings)
     logger.info("Generating figure")
+    return df[text_column].values, embeddings_2d[:, 0], embeddings_2d[:, 1], encoded_labels.values, df[label_column].values
+
+
+def generate_plot(text, x, y, encoded_labels, labels, text_column, label_column) -> Figure:
+    logger.info("Generating figure")
     plot = draw_interactive_scatter_plot(
-        df[text_column].values,
-        embeddings_2d[:, 0],
-        embeddings_2d[:, 1],
-        encoded_labels.values,
-        df[label_column].values,
+        text,
+        x,
+        y,
+        encoded_labels,
+        labels,
         text_column,
         label_column,
     )
